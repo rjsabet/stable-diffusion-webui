@@ -8,18 +8,18 @@ from modules import images, processing, devices
 from modules.processing import Processed, process_images
 from modules.shared import opts, cmd_opts, state
 
-
+# Poor man's inference script for lower powered machines
 class Script(scripts.Script):
     def title(self):
         return "Poor man's outpainting"
-
+# Image to Image comparison on both the generated image and the adversarial image (inference)
     def show(self, is_img2img):
         return is_img2img
 
     def ui(self, is_img2img):
         if not is_img2img:
             return None
-        
+        # Running all parameters and hyperparameters for the grid, pixels, masks, marks, and UI
         pixels = gr.Slider(label="Pixels to expand", minimum=8, maximum=256, step=8, value=128, elem_id=self.elem_id("pixels"))
         mask_blur = gr.Slider(label='Mask blur', minimum=0, maximum=64, step=1, value=4, elem_id=self.elem_id("mask_blur"))
         inpainting_fill = gr.Radio(label='Masked content', choices=['fill', 'original', 'latent noise', 'latent nothing'], value='fill', type="index", elem_id=self.elem_id("inpainting_fill"))
@@ -31,10 +31,12 @@ class Script(scripts.Script):
         initial_seed = None
         initial_info = None
 
+    # Image layer customizations for blur effect
         p.mask_blur = mask_blur * 2
         p.inpainting_fill = inpainting_fill
         p.inpaint_full_res = False
 
+        # Tracking for left and right pixelation
         left = pixels if "left" in direction else 0
         right = pixels if "right" in direction else 0
         up = pixels if "up" in direction else 0
@@ -54,7 +56,9 @@ class Script(scripts.Script):
 
         if down > 0:
             down = target_h - init_img.height - up
-
+    
+    # Loading image component for rendering on both advers and output
+    
         img = Image.new("RGB", (target_w, target_h))
         img.paste(init_img, (left, up))
 
@@ -67,6 +71,7 @@ class Script(scripts.Script):
             mask.height - down - (mask_blur * 2 if down > 0 else 0)
         ), fill="black")
 
+# Loading/Rendering the image within a controlled environment for inferences
         latent_mask = Image.new("L", (img.width, img.height), "white")
         latent_draw = ImageDraw.Draw(latent_mask)
         latent_draw.rectangle((
@@ -76,6 +81,7 @@ class Script(scripts.Script):
              mask.height - down - (mask_blur//2 if down > 0 else 0)
         ), fill="black")
 
+# Grabbing the device information for dimensions (Display range)
         devices.torch_gc()
 
         grid = images.split_grid(img, tile_w=p.width, tile_h=p.height, overlap=pixels)
@@ -92,6 +98,7 @@ class Script(scripts.Script):
         work_latent_mask = []
         work_results = []
 
+# Training the model to iterate and clear the full mask of the screen dimensions
         for (y, h, row), (_, _, row_mask), (_, _, row_latent_mask) in zip(grid.tiles, grid_mask.tiles, grid_latent_mask.tiles):
             for tiledata, tiledata_mask, tiledata_latent_mask in zip(row, row_mask, row_latent_mask):
                 x, w = tiledata[0:2]
@@ -106,6 +113,7 @@ class Script(scripts.Script):
         batch_count = len(work)
         print(f"Poor man's outpainting will process a total of {len(work)} images tiled as {len(grid.tiles[0][2])}x{len(grid.tiles)}.")
 
+# Updating the state management tools
         state.job_count = batch_count
 
         for i in range(batch_count):
@@ -123,7 +131,7 @@ class Script(scripts.Script):
             p.seed = processed.seed + 1
             work_results += processed.images
 
-
+    # Queuing an array of images for inference
         image_index = 0
         for y, h, row in grid.tiles:
             for tiledata in row:
